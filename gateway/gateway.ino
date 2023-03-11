@@ -37,6 +37,7 @@ uint8_t mys2write, count;
 byte mac[6];
 float accx[1750], accy[1750], accz[1750];
 int datapack = 50;
+float temp;
 
 /************ --REVEICED AND SENT CALLBACKS -- ************/
 // Callback function executed when data is received
@@ -67,11 +68,12 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
   if (myData.variable == 0x0001){
       recepack(accx, myData.pos);
     }else if(myData.variable == 0x0002){
-      
       recepack(accy, myData.pos);
     }else if(myData.variable == 0x0004){
-      
       recepack(accz, myData.pos);
+    }else if(myData.variable == 0x0008){
+      temp = myData.datos[0];
+      Serial.println(temp);
     }
   //Serial.println();
 }
@@ -101,7 +103,6 @@ void setup() {
   
   // Set ESP32 as a Wi-Fi Station
   WiFi.mode(WIFI_STA);
-
 
   // Initilize ESP-NOW
   if (esp_now_init() != ESP_OK) {
@@ -172,6 +173,25 @@ void loop() {
         Serial.println();
         delay(10);
       }
+    }
+    else if (msg == "meas7"){
+      data2send.request = 0x40;
+      esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &data2send, sizeof(data2send)); 
+      if (result == ESP_OK) {Serial.print("Sending confirmed ");
+        }else {Serial.println("Sending error");
+      }
+    }
+    else if (msg == "meas8"){
+      data2send.request = 0x80;
+      esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &data2send, sizeof(data2send)); 
+      if (result == ESP_OK) {Serial.print("Sending confirmed ");
+        }else {Serial.println("Sending error");
+      }
+      delay(200);
+      StaticJsonDocument<100> doct;
+      doct["temp"] = temp;
+      serializeJson(doct,Serial);
+      Serial.println();
     }
     else {
       Serial.println("No se reconoce la query");  

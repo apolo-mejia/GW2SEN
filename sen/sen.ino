@@ -8,6 +8,7 @@
 #include <ADXL345_WE.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <Adafruit_ADS1X15.h>
 /*********************** -- DEFINICIONES -- ************************/
 // Direccion del accelerometroADXL345
 #define ADXL345_I2CADDR 0x53
@@ -21,6 +22,7 @@
 ADXL345_WE myAcc = ADXL345_WE(ADXL345_I2CADDR);
 // Creacion del objeto display: "My pantalla"
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+Adafruit_ADS1115 ads;
 /******* -- STRUCTURAS DE DATOS EN COMUNICACION ESP NOW -- *********/
 // Estructuras del mensage a enviar
 typedef struct struct_message {
@@ -53,8 +55,11 @@ struct_message2 data2rec;
 // MAC Address del Gateway - edit as required
 uint8_t broadcastAddress[] = {0x98, 0xCD, 0xAC, 0x49, 0xC4, 0x10};
 
-// Variables de la medidas del sensor
+// Variables de la medidas del acelerometro
 float accx[1750], accy[1750], accz[1750];
+
+// Variables de la temperatura
+float temp;
 
 // Variables de tiempo
 unsigned long timer, start, enlapsed;
@@ -108,6 +113,14 @@ void enviopack(float medida[1750], int lon){
     // Serial.print("el inicializador es ");Serial.println(ini);
   }
 }
+void enviovalue(int vari, float value){
+  data2send.variable = vari;
+  data2send.datos[0] = value;
+  esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &data2send, sizeof(data2send)); 
+  if (result == ESP_OK) {Serial.println("Sending confirmed");
+    }else {Serial.println("Sending error");
+  }  
+}
 /********************* -- FUNCIONES PARA PANTALLA -- ********************/
 // Texto grande una Linea hasta 10 caracteres
 void OneLine(char caracteres[]) {
@@ -150,7 +163,6 @@ void setup() {
   
   // Set up Serial Monitor
   Serial.begin(115200);
-
 
   // Inicio del bus I2C (vamos a colocar los pines trocados
   Wire.begin(22,21);
@@ -229,13 +241,34 @@ void setup() {
   esp_now_register_recv_cb(OnDataRecv);
   
   //meas = 0x0007;
-  
+  // Inicialización del ADC ads1115
+  if (!ads.begin()) {
+    Serial.println("La inicialización de ADS1115 ha fallado!!!");
+    while (1);
+  }
+  ads.setGain(GAIN_ONE);          // 1x gain    +/- 4.096V    1 bit = 0.125mV 
   Serial.println("Aqui estamos desde el sensor ");
 }
 void loop() {
-
   OneLine("H:DEDALO05");
-
+    if ((data2rec.request & 0x40) == 0x40){
+      int ads_raw;
+      float ads_mV;
+      ads_raw = ads.readADC_SingleEnded(0);
+      ads_mV = ads.computeVolts(ads_raw);  
+      delay(10);
+      Serial.print("Valor_computado_a_mV: ");
+      Serial.println(ads_mV*100);
+      temp = ads_mV*100;
+      meas = meas | 0x0008;
+      data2rec.request = data2rec.request & 0xBF;
+    }
+    if ((data2rec.request & 0x80)== 0x80){
+      TwoLine("Enviando Datos","Temperatura");
+      enviovalue(0x0008, temp);
+      meas = meas & 0xFFF7;
+      data2rec.request = data2rec.request & 0x7F;
+      }
     if ((data2rec.request & 0x01) == 0x01){
       count = 0;
       Serial.println("iniciando la toma...");
@@ -251,7 +284,7 @@ void loop() {
         count++;
       }
     data2send.nsamples=count;
-    meas = 0x0007;
+    meas = meas | 0x0007;
     Serial.println("lista la toma");
     TwoLine("DATOS TOMADOS", "TAREA XX");
     data2rec.request = data2rec.request & 0xFE;
@@ -278,50 +311,5 @@ void loop() {
     data2rec.request = data2rec.request & 0xFD;
     Serial.print("La variable meas quedo en : "); Serial.println(meas);
     Serial.print("La variable request queda en "); Serial.println(data2rec.request);
-    }  
-  
-  }
-/*
-void loop() {
-
-  String msg;
-  int duration=500;
-   if (Serial.available() > 0){
-    msg = Serial.readString();
-    if (msg == "meas1"){
-      count = 0;
-      Serial.println("iniciando la toma...");
-      start=millis();
-      data2send.tsample = duration;
-      enlapsed= start + duration;
-      while ( millis() < enlapsed){
-        xyzFloat g = myAcc.getGValues(); 
-        accx[count] = g.x;
-        accy[count] = g.y;
-        accz[count] = g.z;
-        count++;
-      }
-    data2send.nsamples=count;
-    Serial.println("lista la toma");
-    }    
-    else if (msg == "meas2"){
-      if ((meas & 0x0001) == 0x0001){
-        data2send.variable = 0x0001;
-        enviopack(accx, lmeas);
-        meas = meas & 0xFFFE;
-      }
-      if ((meas & 0x0002) == 0x0002){
-        data2send.variable = 0x0002;
-        enviopack(accy, lmeas);
-        meas = meas & 0xFFFD;
-      }
-      if ((meas & 0x0004) == 0x0004){
-        data2send.variable = 0x0004;
-        enviopack(accz, lmeas);
-        meas = meas & 0xFFFB;
-      }
-    Serial.print("La variable meas quedo en : "); Serial.println(meas);
     }
-  }
 }
-*/
